@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "khalas"
+version = "0.1.0"
+description = "Arabic Prompt Optimizer — compare AR vs EN, optimize for fewer tokens"
+authors = [
+    { name = "Musa the Carpenter" },
+]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "rich>=13.0.0",
+    "httpx>=0.24.0",
+]
+
+[project.scripts]
+khalas = "khalas.cli:main"
