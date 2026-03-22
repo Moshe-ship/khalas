@@ -123,13 +123,102 @@ def technique_shorten(prompt: str) -> str:
     return result
 
 
+# ---------------------------------------------------------------------------
+# New techniques (from research: LLMLingua, AraToken, prompt compression)
+# ---------------------------------------------------------------------------
+
+
+def technique_normalize_arabic(prompt: str) -> str:
+    """Normalize Arabic text to reduce token fragmentation.
+    Based on AraToken research — normalizing alef/ya/tashkeel reduces tokenized length."""
+    # Strip tashkeel (diacritics)
+    prompt = re.sub("[\u064B-\u065F\u0670]", "", prompt)
+    # Normalize alef forms: أ إ آ → ا
+    prompt = re.sub("[\u0623\u0625\u0622]", "\u0627", prompt)
+    # Normalize ya: ى → ي
+    prompt = prompt.replace("\u0649", "\u064A")
+    # Remove tatweel
+    prompt = prompt.replace("\u0640", "")
+    return prompt
+
+
+def technique_strip_fewshot(prompt: str) -> str:
+    """Remove few-shot examples from prompt — use zero-shot instead.
+    Research shows zero-shot is nearly as effective for Arabic while cutting tokens significantly."""
+    # Remove common few-shot patterns: "مثال:", "Example:", numbered examples
+    patterns = [
+        r"(?:مثال|مثال \d+|Example \d*)\s*:.*?(?=(?:مثال|Example|\Z))",
+        r"الإدخال\s*:.*?الإخراج\s*:.*?(?=\n\n|\Z)",
+        r"Input\s*:.*?Output\s*:.*?(?=\n\n|\Z)",
+    ]
+    result = prompt
+    for pat in patterns:
+        result = re.sub(pat, "", result, flags=re.DOTALL)
+    return re.sub(r"\n{3,}", "\n\n", result).strip()
+
+
+def technique_system_prompt_split(prompt: str) -> str:
+    """Move static instructions to a reusable prefix, keep only the variable query.
+    This simulates what you'd put in a system prompt (cached/reused, not re-tokenized)."""
+    # Extract the last sentence/question as the core query
+    lines = [l.strip() for l in prompt.split("\n") if l.strip()]
+    if len(lines) <= 1:
+        return prompt
+    # Assume last line is the actual question, rest is instruction
+    return f"[System: {' '.join(lines[:-1])}]\n{lines[-1]}"
+
+
+def technique_transliterate(prompt: str) -> str:
+    """Convert Arabic to rough Arabizi (transliterated Latin) for token reduction.
+    Some models tokenize Latin text much more efficiently. Use as cost baseline."""
+    mapping = {
+        "ا": "a", "ب": "b", "ت": "t", "ث": "th", "ج": "j", "ح": "h",
+        "خ": "kh", "د": "d", "ذ": "th", "ر": "r", "ز": "z", "س": "s",
+        "ش": "sh", "ص": "s", "ض": "d", "ط": "t", "ظ": "z", "ع": "3",
+        "غ": "gh", "ف": "f", "ق": "q", "ك": "k", "ل": "l", "م": "m",
+        "ن": "n", "ه": "h", "و": "w", "ي": "y", "ة": "a", "ى": "a",
+        "أ": "a", "إ": "e", "آ": "a", "ء": "'", "ؤ": "'", "ئ": "'",
+    }
+    result = []
+    for c in prompt:
+        if c in mapping:
+            result.append(mapping[c])
+        else:
+            result.append(c)
+    return "".join(result)
+
+
+def technique_compress_connectors(prompt: str) -> str:
+    """Aggressively compress Arabic connectors and prepositions.
+    Based on LLMLingua-style selective compression — remove low-information tokens."""
+    # Common low-info connectors in Arabic prompts
+    removals = [
+        "وذلك", "حيث أن", "ومن ثم", "وعليه", "لذلك",
+        "بالتالي", "وبالتالي", "علاوة على ذلك", "فضلاً عن",
+        "من جهة أخرى", "في هذا السياق", "مما يعني",
+        "الأمر الذي", "نظراً ل", "وفي ضوء ذلك",
+        "ينبغي الإشارة إلى", "تجدر الإشارة إلى",
+        "من الجدير بالذكر", "لا بد من الإشارة",
+    ]
+    result = prompt
+    for r in removals:
+        result = result.replace(r, "")
+    result = re.sub(r"  +", " ", result).strip()
+    return result
+
+
 # All techniques, in order of expected impact.
 TECHNIQUES: list[tuple[str, callable]] = [
-    ("simplify_arabic", technique_simplify_arabic),
+    ("normalize_arabic", technique_normalize_arabic),
+    ("compress_connectors", technique_compress_connectors),
     ("shorten", technique_shorten),
+    ("simplify_arabic", technique_simplify_arabic),
+    ("strip_fewshot", technique_strip_fewshot),
+    ("system_prompt_split", technique_system_prompt_split),
     ("add_language_hint", technique_add_language_hint),
     ("bilingual_instruction", technique_bilingual_instruction),
     ("english_backbone", technique_english_backbone),
+    ("transliterate", technique_transliterate),
 ]
 
 
